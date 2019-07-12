@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>地铁图展示</title>
+  <script type="text/javascript"
+    src="https://api.map.baidu.com/api?type=subway&v=1.0&ak=SR5GvwWzQbGUvHsUVQkGxC4k1LZqd5l9"></script>
+  <style type="text/css">
+    #container {
+      height: 100%;
+    }
+
+    #bd-subwayInfo {
+      text-align: center;
+      line-height: 50px;
+      background: #000000;
+      background-color: rgba(0, 0, 0, 0.5);
+      padding: 20px;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+
+<body>
+  <button onclick="direct()"></button>
+  <div id="container"></div>
+  <script type="text/javascript">
+    const fillInfoWindowTempl = (station) => {
+      return `
+      <div id="bd-subwayInfo">
+        <div>
+          ${station.name}
+        </div>
+        <div>
+          <button onclick="setStart('${station.name}')">设为起点</button>
+          <button onclick="setEnd('${station.name}')">设为终点</button>
+        </div>
+      </div>
+      `
+    }
+
+    // get city by name
+    const subwayCityName = '杭州';
+    const list = BMapSub.SubwayCitiesList;
+    var subwaycity = null;
+    for (let i = 0; i < list.length; i++) {
+      if (list[i].name === subwayCityName) {
+        subwaycity = list[i];
+        break;
+      }
+    }
+
+    var subway = new BMapSub.Subway('container', subwaycity.citycode);;
+    var startStation = null, endStation = null;
+    var startMarker = null, endMarker = null;
+    if (subwaycity) {
+      subway.addEventListener('subwayloaded', function () {
+        // create local cache of station info
+        var SubwayLines = subway.getLines();
+        var stations = [];
+        var station_id_map = {};
+
+        for (let i = 0; i < SubwayLines.length; i++) {
+          let line = SubwayLines[i].stations;
+          for (let j = 0; j < line.length; j++) {
+            if (!(line[j].name in station_id_map)) {
+              station_id_map[line[j].name] = stations.length;
+              stations.push(line[j]);
+            }
+          }
+        }
+
+        localStorage.setItem("stations", JSON.stringify(stations));
+        localStorage.setItem("station_id_map", JSON.stringify(station_id_map));
+      });
+
+      var zoomControl = new BMapSub.ZoomControl({
+        anchor: BMAPSUB_ANCHOR_BOTTOM_RIGHT,
+        offset: new BMapSub.Size(10, 100)
+      });
+      subway.addControl(zoomControl);
+      subway.setZoom(0.5);
+      subway.setCenter("火车东站");
+
+      subway.addEventListener('tap', function (e) {
+        subway.openInfoWindow(new BMapSub.InfoWindow(fillInfoWindowTempl(e.station)), e.station);
+
+        window.parent.postMessage(e.station.name);
+      });
+    }
+
+    function setStart(name) {
+      if (startStation != null) {
+        subway.removeMarker(startMarker);
+      }
+      startStation = name
+      startMarker = new BMapSub.Marker(name, {
+        icon: new BMapSub.Icon(
+          'https://api.map.baidu.com/images/subway/start-bak.png',
+          new BMapSub.Size(50, 80)
+        )
+      });
+      subway.addMarker(startMarker);
+    }
+
+    function setEnd(name) {
+      if (startStation != null) {
+        subway.removeMarker(endMarker);
+      }
+      endStation = name;
+      endMarker = new BMapSub.Marker(name, {
+        icon: new BMapSub.Icon(
+          'https://api.map.baidu.com/images/subway/end-bak.png',
+          new BMapSub.Size(50, 80)
+        )
+      });
+      subway.addMarker(endMarker);
+    }
+
+    var drct = null;
+
+    function direct() {
+      if (startStation != null && endStation != null) {
+
+        subway.closeInfoWindow();
+        drct = new BMapSub.Direction(subway);
+        drct.search(startStation, endStation);
+      }
+    }
+
+    window.addEventListener("message", (event) => {
+      message = event.data;
+      window.console.log(event);
+      if (message.type == 'collection_line') {
+        setStart(message.content.start);
+        setEnd(message.content.end);
+        direct();
+      } else if (message.type == 'collection_station') {
+        subway.clearOverlays();
+        startStation = null;
+        endStation = null;
+        subway.openInfoWindow(
+          new BMapSub.InfoWindow(
+            fillInfoWindowTempl({ 'name': message.content.station })
+          ),
+          message.content.station
+        );
+
+        window.parent.postMessage(message.content.station);
+      }
+    })
+  </script>
+</body>
+
+</html>
